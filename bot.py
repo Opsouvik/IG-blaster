@@ -92,3 +92,18 @@ app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(MessageHandler(filters.TEXT, downloader))
 
 app.run_polling()
+
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'Bot is running')
+
+def run_web():
+    server = HTTPServer(('0.0.0.0', 10000), Handler)
+    server.serve_forever()
+
+threading.Thread(target=run_web).start()
