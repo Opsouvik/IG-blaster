@@ -22,12 +22,17 @@ def progress_hook(d):
             pass
 
 def get_latest():
-    files = glob.glob("video_*") + glob.glob("*.jpg") + glob.glob("*.png")
+    files = glob.glob("video_*") + glob.glob("*.jpg") + glob.glob("*.png") + glob.glob("*.mp4")
     return sorted(files, key=os.path.getctime)
 
 async def downloader(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global progress_msg
-    text = update.message.text
+    text = update.message.text.strip()
+
+    # ✅ Fix 1: command ignore
+    if text.startswith("/"):
+        await update.message.reply_text("Send a valid link 😄")
+        return
 
     progress_msg = await update.message.reply_text("⏳ Processing...")
 
@@ -37,7 +42,9 @@ async def downloader(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ydl_opts = {
             'outtmpl': filename,
             'format': 'best',
-            'progress_hooks': [progress_hook]
+            'progress_hooks': [progress_hook],
+            'quiet': True,
+            'noplaylist': False
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -45,20 +52,34 @@ async def downloader(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await progress_msg.edit_text("✅ Download complete")
 
+        # ✅ Fix 2: safe media handling
         if 'entries' in info:
             media = []
             for entry in info['entries']:
-                file = ydl.prepare_filename(entry)
-                media.append(InputMediaPhoto(open(file, 'rb')))
-            await update.message.reply_media_group(media)
+                try:
+                    file = ydl.prepare_filename(entry)
+                    if os.path.exists(file):
+                        media.append(InputMediaPhoto(open(file, 'rb')))
+                except:
+                    pass
+
+            if media:
+                await update.message.reply_media_group(media)
+            else:
+                await update.message.reply_text("❌ No media found")
+
         else:
             file = ydl.prepare_filename(info)
-            await update.message.reply_document(open(file, 'rb'))
+
+            if os.path.exists(file):
+                await update.message.reply_document(open(file, 'rb'))
+            else:
+                await update.message.reply_text("❌ File not found")
 
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
 
-# 🔥 Web server (Render fix)
+# 🔥 Render port fix (fake web server)
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
