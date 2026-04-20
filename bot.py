@@ -1,99 +1,70 @@
 from telegram import Update, InputMediaPhoto
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 import yt_dlp
-import time
-import os
 import glob
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import os
 
 TOKEN = "8703423683:AAG28z2dCDkcZl3o29Lt9SCF1m3NvDdPPlA"
 
-progress_msg = None
-
-def progress_hook(d):
-    global progress_msg
-    if d['status'] == 'downloading':
-        percent = d.get('_percent_str', '0%')
-        try:
-            if progress_msg:
-                progress_msg.edit_text(f"📥 Downloading... {percent}")
-        except:
-            pass
-
+# ---------- Get latest downloaded file ----------
 def get_latest():
-    files = glob.glob("video_*") + glob.glob("*.jpg") + glob.glob("*.png") + glob.glob("*.mp4")
-    return sorted(files, key=os.path.getctime)
+    files = glob.glob("*")
+    files = [f for f in files if f.endswith((".mp4", ".jpg", ".png", ".jpeg"))]
+    if not files:
+        return None
+    return max(files, key=os.path.getctime)
 
+# ---------- Downloader ----------
 async def downloader(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global progress_msg
     text = update.message.text.strip()
 
-    # ✅ Fix 1: command ignore
+    # ❌ Ignore commands like /start
     if text.startswith("/"):
-        await update.message.reply_text("Send a valid link 😄")
+        await update.message.reply_text("Send a valid link 😊")
         return
 
-    progress_msg = await update.message.reply_text("⏳ Processing...")
+    # ❌ Invalid link check
+    if not text.startswith("http"):
+        await update.message.reply_text("Send a valid link 😊")
+        return
+
+    msg = await update.message.reply_text("⏳ Processing...")
 
     try:
-        filename = f"video_{int(time.time())}.%(ext)s"
-
         ydl_opts = {
-            'outtmpl': filename,
+            'outtmpl': 'video_%(id)s.%(ext)s',
             'format': 'best',
-            'progress_hooks': [progress_hook],
             'quiet': True,
-            'noplaylist': False
+            'noplaylist': True
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(text, download=True)
+            ydl.extract_info(text, download=True)
 
-        await progress_msg.edit_text("✅ Download complete")
+        file = get_latest()
 
-        # ✅ Fix 2: safe media handling
-        if 'entries' in info:
-            media = []
-            for entry in info['entries']:
-                try:
-                    file = ydl.prepare_filename(entry)
-                    if os.path.exists(file):
-                        media.append(InputMediaPhoto(open(file, 'rb')))
-                except:
-                    pass
+        if not file:
+            await msg.edit_text("❌ No media found")
+            return
 
-            if media:
-                await update.message.reply_media_group(media)
-            else:
-                await update.message.reply_text("❌ No media found")
-
+        # 🎥 Send video
+        if file.endswith(".mp4"):
+            await update.message.reply_video(video=open(file, "rb"))
         else:
-            file = ydl.prepare_filename(info)
+            await update.message.reply_photo(photo=open(file, "rb"))
 
-            if os.path.exists(file):
-                await update.message.reply_document(open(file, 'rb'))
-            else:
-                await update.message.reply_text("❌ File not found")
+        await msg.edit_text("✅ Download complete!")
+
+        # 🧹 Clean file after sending
+        os.remove(file)
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+        await msg.edit_text(f"❌ Error: {str(e)}")
 
-# 🔥 Render port fix (fake web server)
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'Bot is running')
-
-def run_web():
-    server = HTTPServer(('0.0.0.0', 10000), Handler)
-    server.serve_forever()
-
-threading.Thread(target=run_web).start()
-
-# 🔥 Telegram bot start
+# ---------- Run bot ----------
 app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(MessageHandler(filters.TEXT, downloader))
 
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, downloader))
+
+print("Bot running...")
 app.run_polling()
