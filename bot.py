@@ -1,64 +1,94 @@
-
-import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram import Update, InputMediaPhoto
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 import yt_dlp
+import time
+import os
+import glob
 
-TOKEN = os.getenv("8703423683:AAG28z2dCDkcZl3o29Lt9SCF1m3NvDdPPlA")
+TOKEN = "8703423683:AAG28z2dCDkcZl3o29Lt9SCF1m3NvDdPPlA"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Send me a video link (YouTube / Instagram)")
+progress_msg = None
+
+def progress_hook(d):
+    global progress_msg
+    if d['status'] == 'downloading':
+        percent = d.get('_percent_str', '0%')
+        try:
+            if progress_msg:
+                progress_msg.edit_text(f"📥 Downloading... {percent}")
+        except:
+            pass
+
+def get_latest():
+    files = glob.glob("video_*") + glob.glob("audio_*")
+    return sorted(files, key=os.path.getctime)[-1]
 
 async def downloader(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-
-    # Ignore /start
-    if text.startswith("/"):
-        return
-
-    if not text.startswith("http"):
-        await update.message.reply_text("❌ Send a valid link 😅")
-        return
-
-    msg = await update.message.reply_text("⏳ Processing...")
+    global progress_msg
+    text = update.message.text
 
     try:
-        ydl_opts = {
-            'format': 'best',
-            'outtmpl': 'video.%(ext)s',
-            'quiet': True
-        }
+        progress_msg = await update.message.reply_text("⏳ Starting download...")
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(text, download=True)
+        # 🎧 MP3 MODE
+        if text.startswith("mp3"):
+            url = text.replace("mp3 ", "")
+            filename = f"audio_{int(time.time())}.%(ext)s"
 
-            if 'entries' in info:
-                info = info['entries'][0]
+            ydl_opts = {
+                'outtmpl': filename,
+                'format': 'bestaudio/best',
+                'progress_hooks': [progress_hook],
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3'
+                }]
+            }
 
-            file = ydl.prepare_filename(info)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
 
-        if not os.path.exists(file):
-            await msg.edit_text("❌ No media found")
-            return
+            file = get_latest()
+            await progress_msg.edit_text("✅ Done! Sending MP3...")
+            await update.message.reply_audio(audio=open(file, "rb"))
 
-        await msg.edit_text("📤 Uploading...")
-
-        if file.endswith(".mp4"):
-            await update.message.reply_video(video=open(file, 'rb'))
+        # 🎥 VIDEO / INSTAGRAM
         else:
-            await update.message.reply_document(document=open(file, 'rb'))
+            url = text
+            filename = f"video_{int(time.time())}.%(ext)s"
 
-        os.remove(file)
+            ydl_opts = {
+                'outtmpl': filename,
+                'format': 'best',
+                'progress_hooks': [progress_hook]
+            }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+
+                await progress_msg.edit_text("✅ Download complete!")
+
+                # 📸 Carousel
+                if 'entries' in info:
+                    media = []
+                    for entry in info['entries']:
+                        file = ydl.prepare_filename(entry)
+                        media.append(InputMediaPhoto(open(file, "rb")))
+
+                    await update.message.reply_media_group(media)
+
+                else:
+                    file = ydl.prepare_filename(info)
+
+                    if file.endswith(".mp4"):
+                        await update.message.reply_video(video=open(file, "rb"))
+                    else:
+                        await update.message.reply_photo(photo=open(file, "rb"))
 
     except Exception as e:
-        await msg.edit_text(f"❌ Error:\n{str(e)}")
+        await update.message.reply_text("❌ Error:\n" + str(e))
 
-# App setup
 app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(MessageHandler(filters.TEXT, downloader))
 
-# Handlers
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, downloader))
-
-# Run bot
-print("Bot Running...")
 app.run_polling()
