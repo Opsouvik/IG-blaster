@@ -1,10 +1,52 @@
-# IG Blaster Bot
+🤖 Telegram Downloader Bot
 
-This is a Python-based Instagram automation bot.
+A powerful Telegram bot to download videos, images, and media from links directly in Telegram.
 
-## Features
-- Auto actions using proxy
-- Unlimited account support
-- Fast execution
+🚀 Features
 
-## Installation
+- 📥 Download videos & images from links
+- ⚡ Fast processing
+- 🔗 Supports multiple platforms
+- 🤖 Easy Telegram commands
+
+🛠 Requirements
+
+- Python 3.x
+- Telegram Bot Token (from @BotFather)
+
+Install dependencies:
+
+pip install -r requirements.txt
+
+🔑 Setup Bot Token
+
+1. Open Telegram and search @BotFather
+2. Create a new bot using "/start" → "/newbot"
+3. Copy your Bot Token
+
+Now open "bot.py" and add your token:
+
+TOKEN = "YOUR_BOT_TOKEN_HERE"
+
+▶️ Run the Bot
+
+python bot.py
+
+📲 Commands
+
+- "/start" → Start the bot
+- "/help" → Show help message
+- Send any media link → Bot will download it
+
+📁 Output
+
+Downloaded files are automatically sent back to the user in Telegram.
+
+⚠️ Disclaimer
+
+This bot is made for educational purposes only.
+Do not use it to download copyrighted or illegal content.
+
+👨‍💻 Author
+
+Your Name
