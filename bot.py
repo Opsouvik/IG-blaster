@@ -1,108 +1,76 @@
 import os
-import time
+import logging
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-
-# 🔑 TOKEN
+# ====== CONFIG ======
 TOKEN = "7982412181:AAEzfJvDsNIUlTCSnWaNERzpPJpdUXavmSw"
 
-# 📥 Download function
-def download_media(url):
-    filename = f"file_{int(time.time())}.%(ext)s"
+# ====== LOGGING ======
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
+# ====== START ======
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Welcome!\n\nSend me any video link 📥\nI will download & send it 🚀"
+    )
+
+# ====== HELP ======
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📌 Commands:\n"
+        "/start - Start bot\n"
+        "/help - Help menu\n\n"
+        "Just send a link 🔗"
+    )
+
+# ====== DOWNLOAD FUNCTION ======
+def download_video(url):
     ydl_opts = {
-        'outtmpl': filename,
+        'outtmpl': 'downloads/%(title)s.%(ext)s',
         'format': 'best',
-        'quiet': True,
-        'noplaylist': False,
+        'noplaylist': True,
+        'quiet': True
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
+        file_path = ydl.prepare_filename(info)
 
-    return info
+    return file_path
 
+# ====== HANDLE MESSAGE ======
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text
 
-# 🟢 Start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🔥 *Ultra V10 Bot*\n\nSend Instagram / YouTube link",
-        parse_mode="Markdown"
-    )
-
-
-# 📩 Message handler (button show)
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-
-    if "http" not in text:
-        return await update.message.reply_text("❌ Send valid link")
-
-    keyboard = [
-        [InlineKeyboardButton("⬇️ Download", callback_data=text)],
-    ]
-
-    await update.message.reply_text(
-        "🎬 Ready to download",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-
-# 🎯 Button click handler
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    url = query.data
-    msg = await query.message.reply_text("⏳ Downloading...")
+    msg = await update.message.reply_text("⏳ Downloading...")
 
     try:
-        info = download_media(url)
+        os.makedirs("downloads", exist_ok=True)
 
-        title = info.get("title", "Downloaded File")
+        file_path = download_video(url)
 
-        # 📸 Carousel
-        if 'entries' in info:
-            media = []
-            for entry in info['entries']:
-                file = entry['requested_downloads'][0].get('filepath') or entry['requested_downloads'][0].get('filename')
-                media.append(InputMediaPhoto(open(file, "rb")))
+        await msg.edit_text("📤 Uploading...")
 
-            await query.message.reply_media_group(media)
-            await msg.edit_text("✅ Done (Carousel)")
-            return
+        await update.message.reply_document(document=open(file_path, 'rb'))
 
-        file = info['requested_downloads'][0].get('filepath') or info['requested_downloads'][0].get('filename')
+        os.remove(file_path)
 
-        size = round(os.path.getsize(file) / (1024 * 1024), 2)
-
-        caption = f"📌 {title}\n📦 Size: {size} MB"
-
-        # 🎥 Video
-        if file.endswith(".mp4"):
-            await query.message.reply_video(open(file, "rb"), caption=caption)
-
-        # 🖼️ Image
-        elif file.endswith((".jpg", ".jpeg", ".png")):
-            await query.message.reply_photo(open(file, "rb"), caption=caption)
-
-        else:
-            await query.message.reply_document(open(file, "rb"), caption=caption)
-
-        await msg.edit_text("✅ Done")
+        await msg.delete()
 
     except Exception as e:
-        await msg.edit_text(f"❌ Error:\n{str(e)}")
+        await msg.edit_text(f"❌ Error: {str(e)}")
 
-
-# 🚀 Run
+# ====== MAIN ======
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
-app.add_handler(CallbackQueryHandler(button))
+app.add_handler(CommandHandler("help", help_command))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-print("🔥 Ultra V10 Running...")
+print("🤖 Bot Running...")
 app.run_polling()
